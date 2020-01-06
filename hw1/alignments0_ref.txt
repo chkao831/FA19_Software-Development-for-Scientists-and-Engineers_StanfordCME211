@@ -1,0 +1,5 @@
+CAT -1
+TAG 1 5
+GCT 3
+AGA 6
+GTA 0

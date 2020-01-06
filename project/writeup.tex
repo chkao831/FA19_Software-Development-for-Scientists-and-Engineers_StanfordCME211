@@ -1,0 +1,136 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{fullpage}
+\usepackage{times}
+\usepackage{fancyhdr,graphicx,amsmath,amssymb}
+\usepackage[ruled,vlined]{algorithm2e}
+\include{pythonlisting}
+\usepackage[T1]{fontenc}
+\usepackage{authblk}
+
+\title{CME211 Final Project--CG Solver on Steady-state Heat Equation}
+\author{
+  Chih-Hsuan Kao\\
+  \texttt{chkao831@stanford.edu}
+}
+\affil{Stanford University}
+\date{December 9, 2019}
+
+\usepackage{natbib}
+\usepackage{graphicx}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+In this project, I implemented a sparse matrix solver in C++ to solve the steady-state heat equation. The chosen iterative algorithm is the Conjugate Gradient (CG) method. Details of the CG Algorithm will be introduced in Section 5 of this writeup. Firstly, I discretized the pipe wall into an equally spaced Cartesian grid in 2D and assembled heat equations, further forming linear system based on the input text file. Details of the heat system are introduced in Section 2 of this writeup. Then, I solved the linear system $(-A)u = -b$ using the CG method. Finally, using the solution, the visualization task of the temperature distribution is taken care by the post-processing python file. 
+
+\section{Steady-state Heat Geometry and Equations}
+\begin{center}
+\includegraphics[width=.5\textwidth]{problemgeometry.jpg}
+\end{center}
+The problem geometry is illustrated above. In the analysis, I discretized the pipe wall into Cartesian grid in which $\Delta$$x$ = $\Delta$$y$ = $h$. Such information is provided in the input text file. The discrete form of 2D heat equation at point $(i,j)$ in the domain is 
+\[
+  \frac{1}
+       {h^2}
+    (u_{i-1,j}+u_{i+1,j}+u_{i,j-1}+u_{i,j+1}-4u_{i,j} )=0
+\]
+By assembling the above equation at each point (figures are on next page) and by taking care of the boundary condition where periodic points (green points below) are treated as the same unknowns in the system, I formed a linear system $Au = b$ and solved the system using CG Algorithm. The cold (blue) and hot (red) isothermal boundary points are known, so the unknowns in the system would include black interior nodes as well as green periodic boundary points. Since in this form, matrix A is negative definite, I actually solved the system $(-A)u = -b$ instead in the implementation. The ordering of unknowns $u$ in my system is in row-major, starting from the lower left to the upper right. 
+
+\begin{center}
+
+\includegraphics[width=.3\textwidth]{periodicbound.jpg}
+\includegraphics[width=.3\textwidth]{cartesian.jpg}
+\includegraphics[width=.3\textwidth]{legend.jpg}
+\end{center}
+
+\section{Breakdown and Summary of the Whole Program}
+
+In {\fontfamily{qcr}\selectfont main.cpp}, I read in an input text file that contains information describing the geometry (length, width, $h$, $T_c$, $T_h$) of the pipe wall, then, I created a {\fontfamily{qcr}\selectfont HeatEquation2D} object. In {\fontfamily{qcr}\selectfont heat.cpp}, the {\fontfamily{qcr}\selectfont HeatEquation2D} object uses the input data to set up matrix A as {\fontfamily{qcr}\selectfont SparseMatrix} object with corresponding right-hand vector $b$. This is accomplished by utilizing and assembling the heat equation previously specified in section 2. The {\fontfamily{qcr}\selectfont SparseMatrix} object, implemented in the file {\fontfamily{qcr}\selectfont sparse.cpp}, contains vector attributes that describe a matrix and could be transformed from COO format to CSR format in place by calling the function COO2CSR() within {\fontfamily{qcr}\selectfont COO2CSR.cpp}. This is necessary because the CSR format is recommended for matrix in the CG Solver algorithm. Now, to solve the linear system $(-A)u = -b$, I implemented the CG Algorithm in the file {\fontfamily{qcr}\selectfont CGSolver.cpp}. In the algorithm, the basic operations on matrix and vectors are taken care by functions in the file {\fontfamily{qcr}\selectfont matvecops.cpp} as described in section X of this writeup. Finally, upon successfully solving the system using CG, the number of convergence is printed to the command line and the output series of solutions per every 10 iterations (including the first and last ones) are written into the specified output file from the user. The visualization of the temperature distribution within the pipe wall is implemented separately in the python file {\fontfamily{qcr}\selectfont postprocess.py}. The animation of the temperature distribution development during the CG solve (every 10 iteration) is further implemented in the {\fontfamily{qcr}\selectfont bonus.py}. 
+
+\section{The Object-Oriented Programming (OOP) Design for Classes}
+
+The {\fontfamily{qcr}\selectfont HeatEquation2D} class is implemented in {\fontfamily{qcr}\selectfont heat.cpp} and the {\fontfamily{qcr}\selectfont SparseMatrix} class is implemented in {\fontfamily{qcr}\selectfont sparse.cpp}. For a {\fontfamily{qcr}\selectfont HeatEquation2D} object, it has private attributes such as {\fontfamily{qcr}\selectfont SparseMatrix() A}, corresponding to vector {\fontfamily{qcr}\selectfont b, x}, as well as grid information such as {\fontfamily{qcr}\selectfont length, width, h, matrixsize}, $T_{c}$, $T_{h}$, and $T_{x}$ of the grid that are obtained and/or computed based on the input file. Those attributes are useful in calling CGSolver in its Solve() function. In {\fontfamily{qcr}\selectfont CGSolver.cpp}, as a {\fontfamily{qcr}\selectfont SparseMatrix} object is passed in as a parameter, in order to obtain private attributes of this object, three getters are implemented. The private variables can only be accessed within the same class; hence, I implemented getters for row pointer $i$, column index $j$, and CSR value for nonzero entries in the sparse matrix. The concept of encapsulation is used here for better control of class attributes and methods as well as increased security of private data. 
+
+
+\section{The Conjugate Gradient (CG) Algorithm in {\fontfamily{qcr}\selectfont CGSolver.cpp}}
+In {\fontfamily{qcr}\selectfont CGSolver.cpp}, the solver function takes in arguments of the linear system $(-A)u = -b$ as well as information of the output solution file, including solution prefix and the top/bottom isothermal boundary points (non-unknowns) of the system for system completion.
+Now, we are given the matrix -A in the form of three vectors in CSR format, the initial starting guess of ones for the solution vector, and the right-hand vector -b of the system $(-A)u = -b$. Also, the designated tolerance (threshold) for the CG algorithm is preliminarily set to be {\fontfamily{qcr}\selectfont 1.e-5}.
+\begin{algorithm}
+\SetAlgoLined
+ Use the passed-in $u$ as initial guess\;
+ Initialize $r_{0}$ (initial residual) = $b - Au$\;
+ Initialize $r$ (current residual at iteration n) and firstly be $r_{0}$\;
+ Initialize $p$ as deep copy of the initial residual $r_{0}$\;
+ Initialize $L2norm_{r0}$ as l2-norm of the initial residual $r_{0}$\;
+ Initialize $niter$ (number of iteration) to be zero\;
+ Declare $r_{next}$ (for usage at iteration n+1)\;
+ Declare $L2norm_{r}$ as current l2-norm in iteration\; 
+ \While{$niter < size(linear system) $}{
+  $niter$ = $niter +1$ \;
+  $alpha$ = $(r^T*r) / (p^T*A*p)$ \;
+  $u$ = $u + (alpha*p)$ \;
+  $r_{next}$ = $r - (alpha*A*p)$ \;
+  
+  \If{$ L2norm_{r} / L2norm_{r0} < threshold $}{
+   break\;
+   }{
+   }
+ $beta$ = $(r_{next}^T*r_{next})/(r^T*r) $\;
+ $p$ = $r_{next} + beta*p$\;
+ update $r$ = $r_{next}$ \;
+ }
+ return niter\;
+ \caption{The pseudo-code of the CG algorithm for my code}
+\end{algorithm}
+
+\section{The Decomposition of {\fontfamily{qcr}\selectfont matvecops.cpp}}
+
+As mentioned, on one hand, the main task of performing CG algorithm is included in the file {\fontfamily{qcr}\selectfont CGSolver.cpp} along with header file {\fontfamily{qcr}\selectfont CGSolver.hpp}. On the other hand, to support common vector and matrix operations, the breakdown of the task is included in the file {\fontfamily{qcr}\selectfont matvecops.cpp} along with the header file {\fontfamily{qcr}\selectfont matvecops.hpp}. There are five functions in the file. \\
+The first function is {\fontfamily{qcr}\selectfont calculateL2Norm()}. This function takes in a vector and calculates its l2-norm as the return value. The second function is {\fontfamily{qcr}\selectfont calculateVecTrans()}. This function takes in two vectors and calculates $vec1^T * vec2$ and returns the value. The third function is called {\fontfamily{qcr}\selectfont matvecmult()}. The passed-in parameters are three CSR vectors of matrix A, right hand vector of $Ax = b$, and an integer that represents the row size of the square matrix. The function would eventually return the solution vector x as a double vector of the system $Ax = b$. 
+The fourth function is {\fontfamily{qcr}\selectfont vecScalarMult()}. It takes in a (double) scalar and a vector and scales the vector. It eventually returns the vector. Last but not least, the fifth function is {\fontfamily{qcr}\selectfont vecvecAddition()}. It takes in two vectors and a boolean that indicates if it's an addition or a subtraction. If true, we perform vec1+vec2; if false, we perform vec1-vec2. The return value is a vector. 
+
+\section{Users Guide}
+A makefile is implemented for the user's usage. To firstly compile source codes, run \\
+{\fontfamily{qcr}\selectfont \$make} \\
+Then, to run the C++ and generate output, do \\
+{\fontfamily{qcr}\selectfont \$./main <inputfile> <soln prefix>} \\
+After this, a series of solution files corresponding to the solution prefix would be generated in the directory. Also, if succeeded, the number of convergence would be printed out to the command line, such as \\
+{\fontfamily{qcr}\selectfont SUCCESS: CG solver converged in xx iterations.} \\
+With the output text files, we could now perform visualization:\\
+{\fontfamily{qcr}\selectfont \$python3 postprocess.py <inputfile> <soln file>} \\
+Here, the solution file refers to a single specific solution file that we just generated, for example, \\
+{\fontfamily{qcr}\selectfont \$python3 postprocess.py input0.txt output9.txt} \\
+If succeeded, the pseudocolor plot with mean temperature isoline would then be shown and saved as <soln file>.png. \\
+{\fontfamily{qcr}\selectfont Input file processed: XX.txt} \\
+{\fontfamily{qcr}\selectfont Mean Temperature: xx.xxxxx} would be printed to console. \\
+Finally, I've also implemented animation of the temperature distribution development during the CG solve for every 10 iteration. To run the animation, do\\
+{\fontfamily{qcr}\selectfont \$python3 bonus.py <inputfile> <soln prefix>} where the argument pair is identical to the one while previously running {\fontfamily{qcr}\selectfont \$./main <inputfile> <soln prefix>}. \\
+Finally, one could remove {\fontfamily{qcr}\selectfont main}, all objects and editor files by executing {\fontfamily{qcr}\selectfont make clean}.
+
+
+
+\section{Output Showcase}
+
+{\fontfamily{qcr}\selectfont \$make}\\
+{\fontfamily{qcr}\selectfont \$./main input0.txt output}\\
+{\fontfamily{qcr}\selectfont \$./main input1.txt output}\\
+{\fontfamily{qcr}\selectfont \$./main input2.txt output}\\
+{\fontfamily{qcr}\selectfont \$python3 postprocess.py input0.txt output0\_1.txt}\\
+(...ommitted...)\\
+{\fontfamily{qcr}\selectfont \$python3 postprocess.py input0.txt output2\_157.txt}\\
+\\
+Selected output images:
+\begin{center}
+
+\includegraphics[width=.9\textwidth]{showcase2.png}
+
+\end{center}
+
+\section{References}
+$[1]$ LeGresley, P 2019, Final Project: Part 1 for CME 211: Software Development for Scientists and Engineers. http://coursework.stanford.edu. Stanford University, delivered 8 Nov 2019.\\
+$[2]$ LeGresley, P 2019, Final Project: Part 2 for CME 211: Software Development for Scientists and Engineers. http://coursework.stanford.edu. Stanford University, delivered 19 Nov 2019.
+
+\end{document}
